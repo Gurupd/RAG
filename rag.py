@@ -11,15 +11,18 @@ uploaded_file=st.file_uploader("Choose files",type=['txt','pdf','img'])
 query_text = st.text_input('Enter your question:', placeholder = 'Please provide a short summary.', disabled=not uploaded_file)
 
 def rag_response(file,query):
-    documents = [file.read().decode()]
+
+    documents = file.read().decode('utf-8')
     text_splitter = CharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+    texts=text_splitter.create_documents([documents])
     embeddings=HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    vector_store=Chroma.from_texts(text_splitter,embedding=embeddings)
-    print(vector_store)
+    vector_store=Chroma.from_texts([doc.page_content for doc in texts],embedding=embeddings)
     retriever = vector_store.as_retriever(search_kwargs={"k": 2})
-    retriever.invoke(query)
+    res=retriever.invoke(query)
+    print(res[0].page_content)
     
 with st.form('myform', clear_on_submit=False, border=False):
-    submitted = st.form_submit_button('Submit', disabled=not(uploaded_file and query_text))
-    rag_response(uploaded_file,query_text)
+    submitted = st.form_submit_button('Submit')
+    if submitted and uploaded_file and query_text:
+        rag_response(uploaded_file,query_text)
     
