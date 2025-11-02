@@ -16,7 +16,7 @@ client = OpenAI(
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
 )
 
-uploaded_file=st.file_uploader("Choose files",type=['txt','pdf','img'])
+uploaded_file=st.file_uploader("Choose files",type=['txt','pdf','img'],accept_multiple_files=True)
 query_text = st.text_input('Enter your question:', placeholder = 'Please provide a short summary.', disabled=not uploaded_file)
 
 def read_pdf(file):
@@ -27,43 +27,44 @@ def read_pdf(file):
         print(page.get_text())
         text += page.get_text()
     return text
-def rag_response(file,query):
-    if file is not None:
+def rag_response(files,query):
+    result=[]
+    for file in files:
         if file.type=="application/pdf":
             documents=read_pdf(file)
             # return
         else:
             documents = file.read().decode('utf-8')
-        text_splitter = CharacterTextSplitter(chunk_size=500, chunk_overlap=100)
-        texts=text_splitter.create_documents([documents])
-        embeddings=HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        # vector_store=Chroma.from_texts([doc.page_content for doc in texts],embedding=embeddings)
-        # retriever = vector_store.as_retriever(search_kwargs={"k": 2})
-        vector_store=Qdrant.from_documents(texts,embeddings,location=":memory:",collection_name="my_documents")
-        retriever=vector_store.as_retriever()
-        res=retriever.invoke(query)
-        context = "\n\n".join([doc.page_content for doc in res])
-
-        resp=res[0].page_content
-        custom_rag_prompt = ChatPromptTemplate.from_template("""
-        You are an assistant answering based on the given context.    
-          Context:
-        {context}
-
-        Question:
-        {query}
-        Answer in a concise and clear way.
-        """).format(context=context,query=query)
-
-        # st.text_area(res)
-        response = client.chat.completions.create(
-            model="gemini-2.0-flash",
-            messages=[
-                {"role": "system", "content": "You are a knowledgeable assistant that answers based strictly on provided context."},
-                {"role": "user", "content": custom_rag_prompt}
-            ]
-        )
-        print(response.choices[0].message.content)
+        result.append(documents)
+    text_splitter = CharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+    doc_texts=[] 
+    for i in result:
+        doc_texts.extend(text_splitter.create_documents([i]))
+    embeddings=HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    # vector_store=Chroma.from_texts([doc.page_content for doc in texts],embedding=embeddings)
+    # retriever = vector_store.as_retriever(search_kwargs={"k": 2})
+    vector_store=Qdrant.from_documents(doc_texts,embeddings,location=":memory:",collection_name="my_documents")
+    retriever=vector_store.as_retriever()
+    res=retriever.invoke(query)
+    context = "\n\n".join([doc.page_content for doc in res])        
+    resp=res[0].page_content
+    custom_rag_prompt = ChatPromptTemplate.from_template("""
+    You are an assistant answering based on the given context.    
+      Context:
+    {context}       
+    Question:
+    {query}
+    Answer in a concise and clear way.
+    """).format(context=context,query=query)        
+    # st.text_area(res)
+    response = client.chat.completions.create(
+        model="gemini-2.0-flash",
+        messages=[
+            {"role": "system", "content": "You are a knowledgeable assistant that answers based strictly on provided context."},
+            {"role": "user", "content": custom_rag_prompt}
+        ]
+    )
+    print(response.choices[0].message.content)
 
 with st.form('myform', clear_on_submit=False, border=False):
     submitted = st.form_submit_button('Submit')
